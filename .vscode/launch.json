@@ -1,0 +1,12 @@
+{
+    "configurations": [
+        {
+            "type": "debugpy",
+            "request": "launch",
+            "name": "Launch Cinemagoer Fix",
+            "program": "${workspaceFolder}/sentiment_analysis/cinemagoer_fix.py",
+            "console": "integratedTerminal",
+            "justMyCode": false
+        }
+    ]
+}
