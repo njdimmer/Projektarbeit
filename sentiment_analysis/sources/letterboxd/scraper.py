@@ -2,13 +2,14 @@ import aiohttp
 import asyncio
 from bs4 import BeautifulSoup
 from datetime import datetime
-import os
 import random
 from typing import List, Tuple, Optional
 import time
 
 from model import Review
 from db import load_reviews, save_reviews
+
+BASE_URL = "https://letterboxd.com/film"
 
 async def delayed_request(session, url: str, retry_count: int = 3, base_delay: float = 0.1) -> Optional[str]:
     for attempt in range(retry_count):
@@ -107,7 +108,6 @@ async def async_scrape_reviews(base_url: str, movie_name: str, max_concurrent: i
     }
     
     async with aiohttp.ClientSession(timeout=timeout, connector=connector, headers=headers) as session:
-        # First, handle the partial page
         first_page_url = f"{base_url}/{movie_name}/reviews/page/{start_page}/"
         first_page_reviews, has_next = await scrape_single_page(session, first_page_url, semaphore)
         
@@ -118,14 +118,12 @@ async def async_scrape_reviews(base_url: str, movie_name: str, max_concurrent: i
         if not has_next:
             return all_reviews
 
-        # Create tasks for the next few pages
         tasks = []
         for page in range(start_page + 1, start_page + max_concurrent + 1):
             page_url = f"{base_url}/{movie_name}/reviews/page/{page}/"
             task = asyncio.create_task(scrape_single_page(session, page_url, semaphore))
             tasks.append((page, task))
         
-        # Process all tasks
         while tasks:
             new_tasks = []
             for page_num, task in tasks:
@@ -136,7 +134,6 @@ async def async_scrape_reviews(base_url: str, movie_name: str, max_concurrent: i
                         print(f"Added {len(reviews)} reviews from page {page_num}")
                     
                     if has_more:
-                        # Create a new task for the next page
                         next_page = page_num + max_concurrent
                         page_url = f"{base_url}/{movie_name}/reviews/page/{next_page}/"
                         new_task = asyncio.create_task(scrape_single_page(session, page_url, semaphore))
@@ -152,7 +149,6 @@ async def async_scrape_reviews(base_url: str, movie_name: str, max_concurrent: i
 
 if __name__ == "__main__":
     MOVIE_NAME = "wicked-2024"
-    BASE_URL = "https://letterboxd.com/film"
     
     start_time = time.time()
     reviews = asyncio.run(async_scrape_reviews(BASE_URL, MOVIE_NAME))
