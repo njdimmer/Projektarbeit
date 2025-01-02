@@ -2,6 +2,7 @@ from typing import Optional
 import typer
 import matplotlib.pyplot as plt
 import random as rand
+import json
 import sys
 
 from ..workflow.pipeline import process_reviews
@@ -30,12 +31,13 @@ def version(
     return
 
 @app.command()
-def analyze_sentiment(
-    csv: Optional[str] = None,
-    line: Optional[int] = None,
-    text: Optional[str] = None,
-    random: Optional[bool] = False,
-    graph: Optional[bool] = False
+def sentiment(
+    csv: Optional[str] = typer.Option(None, "--csv", help="Path to the CSV file containing reviews."),
+    text: Optional[str] = typer.Option(None, "--text", help="Text of the review to analyze."),
+    lines: Optional[str] = typer.Option(None, "--lines", help="Line number of the review to analyze."),
+    random: Optional[bool] = typer.Option(False, "--random", help="Pick a random review from the CSV file."),
+    graph: Optional[bool] = typer.Option(False, "--graph", help="Output a graph of the sentiments."),
+    jsonl: Optional[bool] = typer.Option(None, "--jsonl", help="Output is formatted in jsonl.")
 ):
     if text:
         reviews = [text]
@@ -46,12 +48,21 @@ def analyze_sentiment(
         if random:
             review = rand.choice(reviews)
             reviews = [review]
-        elif line is not None:
-            if 0 <= line < len(reviews):
-                reviews = [reviews[line]]
+        elif lines is not None:
+            if '-' in lines:
+                start, end = map(int, lines.split('-'))
+                if start > 0 and end > 0 and start < end and start < len(reviews) and end < len(reviews):
+                    reviews = reviews[start:end+1]
+                else:
+                    typer.echo("Invalid line range.")
+                    raise typer.Exit()
             else:
-                typer.echo("Invalid line number.")
-                raise typer.Exit()
+                line_number = int(lines)
+                if line_number > 0 and line_number < len(reviews):
+                    reviews = [reviews[line_number]]
+                else:
+                    typer.echo("Invalid line number.")
+                    raise typer.Exit()
     else:
         typer.echo("Either csv or text must be provided.")
         raise typer.Exit()
@@ -61,10 +72,17 @@ def analyze_sentiment(
     if graph:
         plot_sentiments(sentiments)
     
-    for review, sentiment in zip(reviews, sentiments):
-        typer.echo(f"Review: {review.strip()}")
-        typer.echo(f"Sentiment: {sentiment}")
-        typer.echo("")
+    if jsonl:
+        for review, sentiment in zip(reviews, sentiments):
+            json_line = json.dumps({"review": review.strip(), "sentiment": sentiment}, ensure_ascii=True)
+            typer.echo(json_line)
+    else:
+        for review, sentiment in zip(reviews, sentiments):
+            review_ascii = review.strip().encode('ascii', 'backslashreplace').decode('ascii')
+            sentiment_ascii = json.dumps(sentiment, ensure_ascii=True)
+            typer.echo(f"Review: {review_ascii}")
+            typer.echo(f"Sentiment: {sentiment_ascii}")
+            typer.echo("")
 
 @app.command()
 def aggregate_sentiment(reviews_file: str, output_graph: Optional[bool] = False):
@@ -118,4 +136,6 @@ def plot_aggregate_sentiment(total_sentiment):
     plt.show()
 
 if __name__ == "__main__":
+    sys.stdout = open(sys.stdout.fileno(), mode='w', encoding='utf-8', buffering=1)
+    sys.stderr = open(sys.stderr.fileno(), mode='w', encoding='utf-8', buffering=1)
     app()
