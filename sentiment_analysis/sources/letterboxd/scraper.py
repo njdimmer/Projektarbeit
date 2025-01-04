@@ -148,7 +148,7 @@ async def async_scrape_reviews(base_url: str, movie_name: str, max_concurrent: i
     return all_reviews
 
 if __name__ == "__main__":
-    MOVIE_NAME = "wicked-2024"
+    MOVIE_NAME = "nosferatu-2024"
     
     start_time = time.time()
     reviews = asyncio.run(async_scrape_reviews(BASE_URL, MOVIE_NAME))
@@ -156,4 +156,4 @@ if __name__ == "__main__":
     end_time = time.time()
     
     print(f"Scraped {len(reviews)} reviews in {end_time - start_time:.2f} seconds")
-    print(f"Saved to 'db/letterboxd/{MOVIE_NAME}.csv'")
+    print(f"Saved to 'db/letterboxd/raw/{MOVIE_NAME}.csv'")
