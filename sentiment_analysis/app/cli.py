@@ -22,7 +22,6 @@ def version(
     version: Optional[bool] = typer.Option(
         None,
         "--version",
-        "-v",
         help="Show the application's version and exit.",
         callback=_version_callback,
         is_eager=True,
@@ -30,15 +29,35 @@ def version(
 ) -> None:
     return
 
+SOURCES = ['letterboxd', 'imdb']
+
 @app.command()
-def sentiment(
+def scrape(
+    clean: Optional[bool] = typer.Option(False, "--clean", help="Clean the scraped data."),
+    source: Optional[str] = typer.Option("letterboxd", "--source", help="Scraped data source."),
+):
+    if clean:
+        pass
+    
+    if source not in SOURCES:
+        typer.echo("Invalid source.")
+        raise typer.Exit()
+    
+    if source is  
+    
+    pass
+
+@app.command(help="Analyze the sentiment of a review.")
+def analyze(
     csv: Optional[str] = typer.Option(None, "--csv", help="Path to the CSV file containing reviews."),
     text: Optional[str] = typer.Option(None, "--text", help="Text of the review to analyze."),
     lines: Optional[str] = typer.Option(None, "--lines", help="Line number of the review to analyze."),
     random: Optional[bool] = typer.Option(False, "--random", help="Pick a random review from the CSV file."),
     graph: Optional[bool] = typer.Option(False, "--graph", help="Output a graph of the sentiments."),
-    jsonl: Optional[bool] = typer.Option(None, "--jsonl", help="Output is formatted in jsonl.")
+    jsonl: Optional[bool] = typer.Option(None, "--jsonl", help="Output is formatted in jsonl."),
+    model: Optional[str] = typer.Option('vader', "--model", help="Sentiment analysis model to use.")
 ):
+    # Currently text does not support emojis
     if text:
         reviews = [text]
     elif csv:
@@ -85,7 +104,7 @@ def sentiment(
             typer.echo("")
 
 @app.command()
-def aggregate_sentiment(reviews_file: str, output_graph: Optional[bool] = False):
+def aggregate_analyze(reviews_file: str, output_graph: Optional[bool] = False):
     with open(reviews_file, 'r', encoding='utf-8') as file:
         reviews = file.readlines()[1:]
     
@@ -134,8 +153,3 @@ def plot_aggregate_sentiment(total_sentiment):
     plt.ylabel('Average Score')
     plt.title('Aggregated Sentiment Analysis')
     plt.show()
-
-if __name__ == "__main__":
-    sys.stdout = open(sys.stdout.fileno(), mode='w', encoding='utf-8', buffering=1)
-    sys.stderr = open(sys.stderr.fileno(), mode='w', encoding='utf-8', buffering=1)
-    app()
