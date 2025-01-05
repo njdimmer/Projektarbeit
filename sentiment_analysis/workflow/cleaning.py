@@ -21,7 +21,6 @@ from nltk.corpus import stopwords
 from nltk.stem import WordNetLemmatizer
 import nltk
 
-# Download required NLTK data
 nltk.download('stopwords')
 nltk.download('wordnet')
 
@@ -81,7 +80,6 @@ class TextCleaner:
         text = self.lemmatize_text(text)
         return text
 
-
 class CsvCleaner:
     def __init__(self, cleaner: TextCleaner, base_path='db/letterboxd/clean/'):
         self.cleaner = cleaner
@@ -96,6 +94,10 @@ class CsvCleaner:
             return None
         except ValueError:
             return None
+        
+    def remove_duplicates(self, df):
+        """Remove duplicate reviews based on the 'review' column"""
+        return df.drop_duplicates(subset=['review'], keep='first')
 
     def clean_csv(self, input_path, movie_name):
         """Clean the CSV file and store it in the specified directory"""
@@ -107,6 +109,8 @@ class CsvCleaner:
         df['score'] = df['score'].apply(self.normalize_rating)
         df = df.dropna(subset=['score'])
 
+        df = self.remove_duplicates(df)
+
         if not os.path.exists(self.base_path):
             os.makedirs(self.base_path)
         
@@ -114,7 +118,6 @@ class CsvCleaner:
         df[['review', 'score']].to_csv(output_path, index=False)
 
         print(f"Cleaned data saved to {output_path}")
-
 
 if __name__ == "__main__":
     text_cleaner = TextCleaner()

@@ -148,7 +148,7 @@ async def async_scrape_reviews(base_url: str, movie_name: str, max_concurrent: i
     return all_reviews
 
 if __name__ == "__main__":
-    MOVIE_NAME = "nosferatu-2024"
+    MOVIE_NAME = "wicked-2024"
     
     start_time = time.time()
     reviews = asyncio.run(async_scrape_reviews(BASE_URL, MOVIE_NAME))

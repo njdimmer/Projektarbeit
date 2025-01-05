@@ -29,22 +29,21 @@ def version(
 ) -> None:
     return
 
-SOURCES = ['letterboxd', 'imdb']
 
 @app.command()
 def scrape(
     clean: Optional[bool] = typer.Option(False, "--clean", help="Clean the scraped data."),
     source: Optional[str] = typer.Option("letterboxd", "--source", help="Scraped data source."),
-):
+):    
+    SOURCES = ['letterboxd']
+
     if clean:
         pass
     
     if source not in SOURCES:
         typer.echo("Invalid source.")
         raise typer.Exit()
-    
-    if source is  
-    
+        
     pass
 
 @app.command(help="Analyze the sentiment of a review.")
