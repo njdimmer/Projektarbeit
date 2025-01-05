@@ -2,12 +2,6 @@ from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 
 def vader_sentiment_analysis(text):
     analyzer = SentimentIntensityAnalyzer()
-    
-    new_words = {
-        "garbage": -3.0,
-        "absolute garbage": -4.0
-    }
-    analyzer.lexicon.update(new_words)
 
     sentiment = analyzer.polarity_scores(text)
     return sentiment
