@@ -23,6 +23,34 @@ The CLI tool (`senti`) provides a simple interface to this functionality:
 - `clean`: Preprocess and normalize review text
 - `analyze`: Run sentiment analysis with visualization options
 
+## Model Training & Evaluation
+
+The notebooks demonstrate:
+- Feature extraction and preprocessing
+- Model training and evaluation
+- Performance comparison between approaches
+- Visualization and analysis of results
+
+Each notebook contains detailed comments and markdown cells explaining the implementation details and analysis results. The trained models are saved to the `assets/models` directory for use in production.
+
+The logistic regression model shows superior performance for this specific task of movie review sentiment analysis, likely due to being trained on domain-specific data.
+
+Analysis notebooks are located in the `notebooks` directory:
+
+### [logistic_regression_train.ipynb](./notebooks/logistic_regression_train.ipynb)
+Training notebook for the logistic regression model that includes: 
+- TF-IDF vectorization
+- Model training and evaluation
+
+### [vader.ipynb](./notebooks/vader.ipynb)
+VADER sentiment analysis baseline that includes:
+- VADER sentiment analysis on IMDb dataset
+- Performance evaluation and metrics
+- Comparison visualizations
+
+### [logistic_regression_train.ipynb](./notebooks/logistic_regression_train.ipynb)
+- Model saving for production use (No additional documentation)
+
 ## Features
 - Asynchronous review scraping from Letterboxd
 - Text preprocessing and cleaning
