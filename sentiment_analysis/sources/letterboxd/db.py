@@ -1,10 +1,13 @@
 import csv
 import os
 
-from model import Review
+from .model import Review
+
+BASE_PATH = 'out/db/letterboxd/raw/'
 
 def load_reviews(movie_name: str) -> list[Review]:
-    csv_file_path = f'db/letterboxd/raw/{movie_name}.csv'
+    """Load reviews from a CSV file"""
+    csv_file_path = f'{BASE_PATH}{movie_name}.csv'
     if not os.path.exists(csv_file_path):
         return []
 
@@ -22,7 +25,8 @@ def load_reviews(movie_name: str) -> list[Review]:
     return reviews
 
 def save_reviews(data: list[Review], movie_name: str):
-    csv_file_path = f'db/letterboxd/raw/{movie_name}.csv'
+    """Save reviews to a CSV file"""
+    csv_file_path = f'{BASE_PATH}{movie_name}.csv'
     os.makedirs(os.path.dirname(csv_file_path), exist_ok=True)
     keys = data[0].__annotations__.keys() if data else []
     with open(csv_file_path, 'w', newline='', encoding='utf-8') as csvfile:

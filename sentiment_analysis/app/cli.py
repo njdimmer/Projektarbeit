@@ -1,12 +1,14 @@
 from typing import Optional
 import typer
-import matplotlib.pyplot as plt
-import random as rand
 import json
-import sys
+from pathlib import Path
+import time
+import asyncio
 
-from ..workflow.pipeline import process_reviews
-from ..workflow.vader import aggregate_sentiments
+from ..workflow import SentimentAnalyzer, SentimentPlotter
+from ..workflow.cleaning import TextCleaner, CsvCleaner
+from ..sources.letterboxd.scraper import async_scrape_reviews, BASE_URL
+from ..sources.letterboxd.db import save_reviews
 
 from . import __app_name__, __version__
 
@@ -29,126 +31,112 @@ def version(
 ) -> None:
     return
 
-
-@app.command()
+@app.command(help="Scrape movie reviews from Letterboxd.")
 def scrape(
-    clean: Optional[bool] = typer.Option(False, "--clean", help="Clean the scraped data."),
-    source: Optional[str] = typer.Option("letterboxd", "--source", help="Scraped data source."),
-):    
-    SOURCES = ['letterboxd']
-
-    if clean:
-        pass
-    
-    if source not in SOURCES:
-        typer.echo("Invalid source.")
-        raise typer.Exit()
-        
-    pass
-
-@app.command(help="Analyze the sentiment of a review.")
-def analyze(
-    csv: Optional[str] = typer.Option(None, "--csv", help="Path to the CSV file containing reviews."),
-    text: Optional[str] = typer.Option(None, "--text", help="Text of the review to analyze."),
-    lines: Optional[str] = typer.Option(None, "--lines", help="Line number of the review to analyze."),
-    random: Optional[bool] = typer.Option(False, "--random", help="Pick a random review from the CSV file."),
-    graph: Optional[bool] = typer.Option(False, "--graph", help="Output a graph of the sentiments."),
-    jsonl: Optional[bool] = typer.Option(None, "--jsonl", help="Output is formatted in jsonl."),
-    model: Optional[str] = typer.Option('vader', "--model", help="Sentiment analysis model to use.")
+    movie: str = typer.Argument(..., help="Movie name (e.g. 'wicked-2024')"),
+    clean: bool = typer.Option(False, "--clean", help="Clean scraped data immediately"),
 ):
-    # Currently text does not support emojis
-    if text:
-        reviews = [text]
-    elif csv:
-        with open(csv, 'r', encoding='utf-8') as file:
-            reviews = file.readlines()
+    """Scrape reviews for a movie from Letterboxd and optionally clean the data"""
+    
+    start_time = time.time()
+    try:
+        reviews = asyncio.run(async_scrape_reviews(BASE_URL, movie))
+        save_reviews(reviews, movie)
         
-        if random:
-            review = rand.choice(reviews)
-            reviews = [review]
-        elif lines is not None:
-            if '-' in lines:
-                start, end = map(int, lines.split('-'))
-                if start > 0 and end > 0 and start < end and start < len(reviews) and end < len(reviews):
-                    reviews = reviews[start:end+1]
-                else:
-                    typer.echo("Invalid line range.")
-                    raise typer.Exit()
+        scrape_time = time.time() - start_time
+        typer.echo(f"Scraped {len(reviews)} reviews in {scrape_time:.2f} seconds")
+        typer.echo(f"Saved to 'out/db/letterboxd/raw/{movie}.csv'")
+        
+        if clean:
+            cleaner = CsvCleaner(TextCleaner())
+            cleaner.clean_csv(f'out/db/letterboxd/raw/{movie}.csv', movie)
+            
+    except Exception as e:
+        typer.echo(f"Error: {e}")
+        raise typer.Exit(1)
+    
+@app.command(help="Clean and preprocess review data.")
+def clean(
+    csv: str = typer.Argument(..., help="Path to CSV file to clean"),
+):
+    """Clean and preprocess review data"""
+    
+    try:
+        movie_name = Path(csv).stem
+        cleaner = CsvCleaner(TextCleaner())
+        cleaner.clean_csv(csv, movie_name)
+    except Exception as e:
+        typer.echo(f"Error cleaning data: {e}")
+        raise typer.Exit(1)
+
+@app.command(help="Analyze sentiment of text or reviews in CSV.")
+def analyze(
+    csv: Optional[str] = typer.Option(None, "--csv", help="Path to CSV file containing reviews"),
+    text: Optional[str] = typer.Option(None, "--text", help="Single text to analyze"),
+    model: str = typer.Option('vader', "--model", help="Model to use (vader/logreg)"),
+    graph: Optional[str] = typer.Option(None, "--graph", help="Plot type (distribution/comparison/averages/all)"),
+    output: str = typer.Option('out/plots', "--output", help="Directory to save plots (default: out/plots)"),
+    jsonl: bool = typer.Option(False, "--jsonl", help="Output in JSONL format. This includes vector data."),
+):
+    """Analyze sentiment using specified model and display/save results"""
+    if not csv and not text:
+        typer.echo("Either --csv or --text must be provided")
+        raise typer.Exit(1)
+    
+    if csv and text:
+        typer.echo("Cannot use both --csv and --text together")
+        raise typer.Exit(1)
+
+    analyzer = SentimentAnalyzer(model)
+    plotter = SentimentPlotter(output) if graph else None
+    
+    if text:
+        sentiment = analyzer.model.analyze(text)
+        if jsonl:
+            typer.echo(json.dumps({"text": text, "sentiment": sentiment}))
+        else:
+            typer.echo(f"Text: {text}")
+            typer.echo(f"Sentiment: {json.dumps(sentiment, indent=2)}")
+        return
+    
+    try:
+        results = analyzer.analyze_reviews(csv)
+        if jsonl:
+            typer.echo(json.dumps(results))
+        else:
+            typer.echo(f"\n{model.upper()} Analysis Results")
+            typer.echo("-" * 50)
+            typer.echo(f"Total Reviews: {results['total_reviews']}")
+            
+            typer.echo("\nAverage Scores:")
+            for metric, score in results['average_scores'].items():
+                typer.echo(f"  {metric.title()}: {score:.3f}")
+            
+            typer.echo("\nSentiment Distribution:")
+            for sentiment, count in results['sentiment_distribution'].items():
+                typer.echo(f"  {sentiment.title()}: {count}")
+            
+            typer.echo("\nScore Comparison:")
+            comp = results['comparison']
+            typer.echo(f"  Correlation: {comp['correlation']:.3f}")
+            typer.echo(f"  Mean Absolute Error: {comp['mae']:.3f}")
+            typer.echo(f"  Root Mean Square Error: {comp['rmse']:.3f}")
+        
+        if graph and plotter:
+            movie_name = Path(csv).stem
+            if graph == 'distribution':
+                plotter.plot_sentiment_distribution(results, movie_name, model)
+            elif graph == 'comparison':
+                plotter.plot_score_comparison(results, movie_name)
+            elif graph == 'averages':
+                plotter.plot_average_scores(results, movie_name)
+            elif graph == 'all':
+                plotter.plot_all(results, movie_name, model)
             else:
-                line_number = int(lines)
-                if line_number > 0 and line_number < len(reviews):
-                    reviews = [reviews[line_number]]
-                else:
-                    typer.echo("Invalid line number.")
-                    raise typer.Exit()
-    else:
-        typer.echo("Either csv or text must be provided.")
-        raise typer.Exit()
+                typer.echo(f"Invalid graph type: {graph}")
+                raise typer.Exit(1)
+                
+    except Exception as e:
+        typer.echo(f"Error analyzing CSV: {str(e)}")
+        raise typer.Exit(1)
     
-    sentiments = process_reviews(reviews)
-    
-    if graph:
-        plot_sentiments(sentiments)
-    
-    if jsonl:
-        for review, sentiment in zip(reviews, sentiments):
-            json_line = json.dumps({"review": review.strip(), "sentiment": sentiment}, ensure_ascii=True)
-            typer.echo(json_line)
-    else:
-        for review, sentiment in zip(reviews, sentiments):
-            review_ascii = review.strip().encode('ascii', 'backslashreplace').decode('ascii')
-            sentiment_ascii = json.dumps(sentiment, ensure_ascii=True)
-            typer.echo(f"Review: {review_ascii}")
-            typer.echo(f"Sentiment: {sentiment_ascii}")
-            typer.echo("")
-
-@app.command()
-def aggregate_analyze(reviews_file: str, output_graph: Optional[bool] = False):
-    with open(reviews_file, 'r', encoding='utf-8') as file:
-        reviews = file.readlines()[1:]
-    
-    sentiments = process_reviews(reviews)
-    total_sentiment = aggregate_sentiments(sentiments)
-    
-    typer.echo("Aggregated Sentiment:")
-    typer.echo(f"Positive: {total_sentiment['pos']}")
-    typer.echo(f"Neutral: {total_sentiment['neu']}")
-    typer.echo(f"Negative: {total_sentiment['neg']}")
-    typer.echo(f"Compound: {total_sentiment['compound']}")
-    
-    if output_graph:
-        plot_aggregate_sentiment(total_sentiment)
-
-@app.command()
-def plot_sentiment(reviews_file: str):
-    with open(reviews_file, 'r', encoding='utf-8') as file:
-        reviews = file.readlines()[:1]
-    
-    sentiments = process_reviews(reviews)
-    plot_sentiments(sentiments)
-
-def plot_sentiments(sentiments):
-    positive = [s['pos'] for s in sentiments]
-    neutral = [s['neu'] for s in sentiments]
-    negative = [s['neg'] for s in sentiments]
-    
-    plt.figure(figsize=(10, 5))
-    plt.plot(positive, label='Positive')
-    plt.plot(neutral, label='Neutral')
-    plt.plot(negative, label='Negative')
-    plt.xlabel('Review')
-    plt.ylabel('Sentiment Score')
-    plt.legend()
-    plt.title('Sentiment Analysis of Reviews')
-    plt.show()
-
-def plot_aggregate_sentiment(total_sentiment):
-    labels = ['Positive', 'Neutral', 'Negative', 'Compound']
-    sizes = [total_sentiment['pos'], total_sentiment['neu'], total_sentiment['neg'], total_sentiment['compound']]
-    
-    plt.figure(figsize=(10, 5))
-    plt.bar(labels, sizes, color=['green', 'blue', 'red', 'purple'])
-    plt.xlabel('Sentiment')
-    plt.ylabel('Average Score')
-    plt.title('Aggregated Sentiment Analysis')
-    plt.show()

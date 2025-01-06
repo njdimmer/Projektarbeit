@@ -2,52 +2,33 @@ import aiohttp
 import asyncio
 from bs4 import BeautifulSoup
 from datetime import datetime
-import random
-from typing import List, Tuple, Optional
+from typing import List, Tuple
 import time
 
-from model import Review
-from db import load_reviews, save_reviews
+from .model import Review
+from .db import load_reviews, save_reviews
 
 BASE_URL = "https://letterboxd.com/film"
 
-async def delayed_request(session, url: str, retry_count: int = 3, base_delay: float = 0.1) -> Optional[str]:
-    for attempt in range(retry_count):
-        try:
-            delay = base_delay * (1 + random.random() * 0.5)
-            await asyncio.sleep(delay)
-            
-            async with session.get(url) as response:
-                if response.status == 429:
-                    retry_after = min(int(response.headers.get('Retry-After', 5)), 5)
-                    print(f"Rate limited. Waiting {retry_after} seconds...")
-                    await asyncio.sleep(retry_after)
-                    continue
-                    
-                response.raise_for_status()
-                return await response.text()
-                
-        except aiohttp.ClientError as e:
-            wait_time = (attempt + 1) * 2
-            print(f"Error fetching {url}: {e}. Retrying in {wait_time} seconds... (Attempt {attempt + 1}/{retry_count})")
-            await asyncio.sleep(wait_time)
-    
-    print(f"Failed to fetch {url} after {retry_count} attempts")
-    return None
-
-async def scrape_single_page(session, page_url: str, semaphore: asyncio.Semaphore) -> Tuple[List[Review], bool]:
+async def scrape_single_page(session: aiohttp.ClientSession, url: str, semaphore: asyncio.Semaphore) -> Tuple[List[Review], bool]:
+    """Scrape a single page of reviews"""
     async with semaphore:
-        html_content = await delayed_request(session, page_url)
-        if not html_content:
+        try:
+            async with session.get(url) as response:
+                if response.status != 200:
+                    return [], False
+                    
+                html = await response.text()
+                soup = BeautifulSoup(html, 'html.parser')
+                reviews = []
+                review_elements = soup.find_all('li', class_='film-detail')
+                
+                if not review_elements:
+                    return [], False
+                
+        except Exception as e:
+            print(f"Error fetching {url}: {e}")
             return [], False
-        
-        reviews = []
-        soup = BeautifulSoup(html_content, 'html.parser')
-        review_elements = soup.find_all('li', class_='film-detail')
-        
-        if not review_elements:
-            print(f"No reviews found on {page_url}")
-            return reviews, False
         
         for element in review_elements:
             try:
@@ -69,10 +50,10 @@ async def scrape_single_page(session, page_url: str, semaphore: asyncio.Semaphor
             except Exception as e:
                 print(f"Error processing review: {e}")
                 continue
-                
         return reviews, True
 
 def process_review(raw_review: dict) -> Review:
+    """Process raw review data into a Review object"""
     username = raw_review['username'].replace('/', '')
     score = raw_review['stars'].count('★') + (0.5 if '½' in raw_review['stars'] else 0)
     date = raw_review['date']
@@ -87,6 +68,7 @@ def process_review(raw_review: dict) -> Review:
     )
 
 async def async_scrape_reviews(base_url: str, movie_name: str, max_concurrent: int = 5):
+    """Scrape all reviews for a movie asynchronously"""
     REVIEWS_PER_PAGE = 12
     existing_reviews = load_reviews(movie_name)
     existing_reviews_count = len(existing_reviews)
@@ -98,7 +80,6 @@ async def async_scrape_reviews(base_url: str, movie_name: str, max_concurrent: i
     all_reviews = existing_reviews[:]
     
     print(f"Starting from page {start_page} (found {len(all_reviews)} existing reviews)")
-    print(f"Last page had {reviews_on_last_page} reviews")
     
     semaphore = asyncio.Semaphore(max_concurrent)
     timeout = aiohttp.ClientTimeout(total=10)
@@ -113,7 +94,6 @@ async def async_scrape_reviews(base_url: str, movie_name: str, max_concurrent: i
         
         if first_page_reviews:
             all_reviews.extend(first_page_reviews[reviews_on_last_page:])
-            print(f"Added {len(first_page_reviews) - reviews_on_last_page} new reviews from partial page {start_page}")
         
         if not has_next:
             return all_reviews
@@ -131,7 +111,6 @@ async def async_scrape_reviews(base_url: str, movie_name: str, max_concurrent: i
                     reviews, has_more = await task
                     if reviews:
                         all_reviews.extend(reviews)
-                        print(f"Added {len(reviews)} reviews from page {page_num}")
                     
                     if has_more:
                         next_page = page_num + max_concurrent
